@@ -51,7 +51,7 @@ internal class Indenter(PrinterOptions printerOptions)
         {
             return new Indent
             {
-                Value = indent.Value + new string(' ', this.PrinterOptions.IndentSize),
+                Value = indent.Value.PadRight(PrinterOptions.IndentSize),
                 Length = indent.Length + this.PrinterOptions.IndentSize,
             };
         }
@@ -67,7 +67,7 @@ internal class Indenter(PrinterOptions printerOptions)
         {
             return new Indent
             {
-                Value = indent.Value + new string(' ', alignment),
+                Value = indent.Value.PadRight(alignment),
                 Length = indent.Length + alignment,
             };
         }
