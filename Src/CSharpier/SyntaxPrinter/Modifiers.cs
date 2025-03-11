@@ -114,6 +114,6 @@ internal static class Modifiers
             context.State.ReorderedModifiers = true;
         }
 
-        return print(sortedModifiers.ToArray());
+        return print(sortedModifiers);
     }
 }
