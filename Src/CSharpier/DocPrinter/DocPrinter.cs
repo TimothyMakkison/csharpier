@@ -234,7 +234,11 @@ internal class DocPrinter
                 }
             }
 
+#if NETSTANDARD2_0
             this.Output.Append(line.Trim());
+#else
+            this.Output.Append(line.AsSpan().Trim());
+#endif
             line = stringReader.ReadLine();
             if (line == null)
             {
