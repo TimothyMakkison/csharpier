@@ -14,7 +14,7 @@ internal static class DocUtilities
         return doc switch
         {
             IHasContents hasContents => ContainsBreak(hasContents.Contents),
-            Concat concat => concat.Contents.Any(ContainsBreak),
+            Concat concat => concat.Any(ContainsBreak),
             IfBreak ifBreak => ContainsBreak(ifBreak.FlatContents),
             _ => false,
         };
@@ -73,6 +73,33 @@ internal static class DocUtilities
         return doc;
     }
 
+    private static void RemoveInitialDoubleHardLineConcat(Concat docs, ref bool removeNextHardLine)
+    {
+        var x = 0;
+        while (x < docs.Count)
+        {
+            var doc = docs[x];
+
+            if (doc is HardLine)
+            {
+                if (removeNextHardLine)
+                {
+                    docs[x] = Doc.Null;
+                    return;
+                }
+
+                removeNextHardLine = true;
+            }
+            else
+            {
+                RemoveInitialDoubleHardLine(doc, ref removeNextHardLine);
+                return;
+            }
+
+            x++;
+        }
+    }
+
     private static void RemoveInitialDoubleHardLine(Doc doc, ref bool removeNextHardLine)
     {
         switch (doc)
@@ -112,7 +139,7 @@ internal static class DocUtilities
                         return;
                 }
             case Concat concat:
-                RemoveInitialDoubleHardLine(concat.Contents, ref removeNextHardLine);
+                RemoveInitialDoubleHardLineConcat(concat, ref removeNextHardLine);
                 return;
         }
     }

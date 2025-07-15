@@ -800,6 +800,6 @@ public class DocPrinterTests
 
     private static Concat ActualConcat(params Doc[] contents)
     {
-        return new Concat(contents.ToList());
+        return new Concat.WithManyChildren(contents);
     }
 }
