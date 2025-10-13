@@ -63,6 +63,17 @@ internal abstract class Doc
         };
     }
 
+    public static Doc Concat(IEnumerable<Doc> contents)
+    {
+        var vlb = new ValueListBuilder<Doc>([null, null, null, null, null, null, null, null]);
+        foreach (var content in contents)
+        {
+            vlb.Append(content);
+        }
+
+        return Concat(ref vlb);
+    }
+
     public static Doc Join(Doc separator, IEnumerable<Doc> enumerable)
     {
         var docs = new List<Doc>();
