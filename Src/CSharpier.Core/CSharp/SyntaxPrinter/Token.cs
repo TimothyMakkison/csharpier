@@ -49,6 +49,12 @@ internal static class Token
             return Doc.Null;
         }
 
+        return PrintSyntaxTokenInner(syntaxToken, context, suffixDoc, skipLeadingTrivia, skipTrailingTrivia);
+    }
+
+    private static Doc PrintSyntaxTokenInner(SyntaxToken syntaxToken, PrintingContext context, Doc? suffixDoc,
+        bool skipLeadingTrivia, bool skipTrailingTrivia)
+    {
         var docs = new ValueListBuilder<Doc>([null, null, null, null, null, null, null, null]);
 
         if (!skipLeadingTrivia)
@@ -71,7 +77,7 @@ internal static class Token
                     is InterpolatedStringExpressionSyntax
                     {
                         StringStartToken.RawKind: (int)
-                            SyntaxKind.InterpolatedVerbatimStringStartToken
+                        SyntaxKind.InterpolatedVerbatimStringStartToken
                     }
             )
         )
@@ -114,7 +120,7 @@ internal static class Token
         else if (
             syntaxToken.RawSyntaxKind()
             is SyntaxKind.InterpolatedMultiLineRawStringStartToken
-                or SyntaxKind.InterpolatedRawStringEndToken
+            or SyntaxKind.InterpolatedRawStringEndToken
         )
         {
             docs.Append(syntaxToken.Text.Trim());
@@ -132,7 +138,7 @@ internal static class Token
                 if (
                     context.State.TrailingComma is not null
                     && Enumerable.FirstOrDefault(syntaxToken.TrailingTrivia, o => o.IsComment())
-                        == context.State.TrailingComma.TrailingComment
+                    == context.State.TrailingComma.TrailingComment
                 )
                 {
                     docs.Append(context.State.TrailingComma.PrintedTrailingComma);
@@ -163,10 +169,15 @@ internal static class Token
             return Doc.Null;
         }
 
+        return PrintLeadingTriviaInner(syntaxToken, context);
+    }
+
+    private static Doc PrintLeadingTriviaInner(SyntaxToken syntaxToken, PrintingContext context)
+    {
         var isClosingBrace =
             syntaxToken.RawSyntaxKind() == SyntaxKind.CloseBraceToken
             || syntaxToken.Parent is CollectionExpressionSyntax
-                && syntaxToken.RawSyntaxKind() == SyntaxKind.CloseBracketToken;
+            && syntaxToken.RawSyntaxKind() == SyntaxKind.CloseBracketToken;
 
         var printedTrivia = PrivatePrintLeadingTrivia(
             syntaxToken.LeadingTrivia,
@@ -237,6 +248,12 @@ internal static class Token
             return Doc.Null;
         }
 
+        return PrivatePrintLeadingTriviaInner(leadingTrivia, context, includeInitialNewLines, skipLastHardline);
+    }
+
+    private static Doc PrivatePrintLeadingTriviaInner(SyntaxTriviaList leadingTrivia, PrintingContext context,
+        bool includeInitialNewLines, bool skipLastHardline)
+    {
         var docs = new List<Doc>();
 
         // we don't print any new lines until we run into a comment or directive
