@@ -27,7 +27,7 @@ internal static partial class BaseMethodDeclaration
         TypeSyntax? returnType = null;
         ExplicitInterfaceSpecifierSyntax? explicitInterfaceSpecifier = null;
         TypeParameterListSyntax? typeParameterList = null;
-        Func<Doc>? identifier = null;
+        Func<CSharpSyntaxNode, PrintingContext, Doc>? identifier = null;
         SyntaxList<TypeParameterConstraintClauseSyntax>? constraintClauses = null;
         ParameterListSyntax? parameterList = null;
         ConstructorInitializerSyntax? constructorInitializer = null;
@@ -46,21 +46,32 @@ internal static partial class BaseMethodDeclaration
             {
                 returnType = methodDeclarationSyntax.ReturnType;
                 explicitInterfaceSpecifier = methodDeclarationSyntax.ExplicitInterfaceSpecifier;
-                identifier = () => Token.Print(methodDeclarationSyntax.Identifier, context);
+                identifier = static (node, context) =>
+                {
+                    var methodDeclarationSyntax = (MethodDeclarationSyntax)node;
+                    return Token.Print(methodDeclarationSyntax.Identifier, context);
+                };
                 typeParameterList = methodDeclarationSyntax.TypeParameterList;
                 constraintClauses = methodDeclarationSyntax.ConstraintClauses;
             }
-            else if (node is DestructorDeclarationSyntax destructorDeclarationSyntax)
+            else if (node is DestructorDeclarationSyntax)
             {
-                identifier = () =>
-                    Doc.Concat(
+                identifier = static (node, context) =>
+                {
+                    var destructorDeclarationSyntax = (DestructorDeclarationSyntax)node;
+                    return Doc.Concat(
                         Token.Print(destructorDeclarationSyntax.TildeToken, context),
                         Token.Print(destructorDeclarationSyntax.Identifier, context)
                     );
+                };
             }
             else if (node is ConstructorDeclarationSyntax constructorDeclarationSyntax)
             {
-                identifier = () => Token.Print(constructorDeclarationSyntax.Identifier, context);
+                identifier = static (node, context) =>
+                {
+                    var constructorDeclarationSyntax = (ConstructorDeclarationSyntax)node;
+                    return Token.Print(constructorDeclarationSyntax.Identifier, context);
+                };
                 constructorInitializer = constructorDeclarationSyntax.Initializer;
             }
 
@@ -71,7 +82,11 @@ internal static partial class BaseMethodDeclaration
             attributeLists = localFunctionStatementSyntax.AttributeLists;
             modifiers = localFunctionStatementSyntax.Modifiers;
             returnType = localFunctionStatementSyntax.ReturnType;
-            identifier = () => Token.Print(localFunctionStatementSyntax.Identifier, context);
+            identifier = static (node, context) =>
+            {
+                var localFunctionStatementSyntax = (LocalFunctionStatementSyntax)node;
+                return Token.Print(localFunctionStatementSyntax.Identifier, context);
+            };
             typeParameterList = localFunctionStatementSyntax.TypeParameterList;
             parameterList = localFunctionStatementSyntax.ParameterList;
             constraintClauses = localFunctionStatementSyntax.ConstraintClauses;
@@ -80,19 +95,21 @@ internal static partial class BaseMethodDeclaration
             semicolonToken = localFunctionStatementSyntax.SemicolonToken;
         }
 
-        var docs = new List<Doc>();
-        var declarationGroup = new List<Doc>();
+        var docs = new ValueListBuilder<Doc>([null, null, null, null, null, null, null, null]);
 
         if (node is LocalFunctionStatementSyntax)
         {
-            docs.Add(ExtraNewLines.Print(node));
+            docs.Append(ExtraNewLines.Print(node));
         }
 
         if (attributeLists is { Count: > 0 })
         {
-            docs.Add(AttributeLists.Print(node, attributeLists.Value, context));
+            docs.Append(AttributeLists.Print(node, attributeLists.Value, context));
 
-            void PrintMethodUnformattedWithoutAttributes(SyntaxTriviaList syntaxTriviaList)
+            void PrintMethodUnformattedWithoutAttributes(
+                SyntaxTriviaList syntaxTriviaList,
+                ref ValueListBuilder<Doc> docs
+            )
             {
                 var attributeStart = attributeLists
                     .Value[0]
@@ -110,7 +127,7 @@ internal static partial class BaseMethodDeclaration
                     .ToString()
                     .Trim();
 
-                docs.Add(
+                docs.Append(
                     RemoveWhiteSpaceLineEndingsRegex.Replace(
                         methodWithoutAttributes,
                         context.Options.LineEnding
@@ -118,25 +135,42 @@ internal static partial class BaseMethodDeclaration
                 );
             }
 
-            if (modifiers is { Count: > 0 })
+            if (context.Information.HasCSharpierIgnore)
             {
-                if (CSharpierIgnore.HasIgnoreComment(modifiers.Value[0]))
+                if (modifiers is { Count: > 0 })
                 {
-                    PrintMethodUnformattedWithoutAttributes(modifiers.Value[0].LeadingTrivia);
-                    return Doc.Group(docs);
+                    if (CSharpierIgnore.HasIgnoreComment(modifiers.Value[0]))
+                    {
+                        PrintMethodUnformattedWithoutAttributes(
+                            modifiers.Value[0].LeadingTrivia,
+                            ref docs
+                        );
+                        var returnDoc = Doc.Group(ref docs);
+                        docs.Dispose();
+                        return returnDoc;
+                    }
                 }
-            }
-            else if (returnType is not null && CSharpierIgnore.HasIgnoreComment(returnType))
-            {
-                PrintMethodUnformattedWithoutAttributes(returnType.GetLeadingTrivia());
-                return Doc.Group(docs);
+                else if (returnType is not null && CSharpierIgnore.HasIgnoreComment(returnType))
+                {
+                    PrintMethodUnformattedWithoutAttributes(
+                        returnType.GetLeadingTrivia(),
+                        ref docs
+                    );
+                    var returnDoc = Doc.Group(ref docs);
+                    docs.Dispose();
+                    return returnDoc;
+                }
             }
         }
 
+        var declarationGroup = new ValueListBuilder<Doc>(
+            [null, null, null, null, null, null, null, null]
+        );
+
         if (modifiers is { Count: > 0 })
         {
-            docs.Add(Token.PrintLeadingTrivia(modifiers.Value[0], context));
-            declarationGroup.Add(
+            docs.Append(Token.PrintLeadingTrivia(modifiers.Value[0], context));
+            declarationGroup.Append(
                 Modifiers.PrintSorterWithoutLeadingTrivia(modifiers.Value, context)
             );
         }
@@ -145,17 +179,17 @@ internal static partial class BaseMethodDeclaration
         {
             if (modifiers is not { Count: > 0 })
             {
-                docs.Add(Token.PrintLeadingTrivia(returnType.GetLeadingTrivia(), context));
+                docs.Append(Token.PrintLeadingTrivia(returnType.GetLeadingTrivia(), context));
                 context.State.SkipNextLeadingTrivia = true;
             }
 
-            declarationGroup.Add(Node.Print(returnType, context), " ");
+            declarationGroup.Append(Node.Print(returnType, context), " ");
             context.State.SkipNextLeadingTrivia = false;
         }
 
         if (explicitInterfaceSpecifier != null)
         {
-            declarationGroup.Add(
+            declarationGroup.Append(
                 Node.Print(explicitInterfaceSpecifier.Name, context),
                 Token.Print(explicitInterfaceSpecifier.DotToken, context)
             );
@@ -163,12 +197,12 @@ internal static partial class BaseMethodDeclaration
 
         if (identifier != null)
         {
-            declarationGroup.Add(identifier());
+            declarationGroup.Append(identifier(node, context));
         }
 
         if (node is ConversionOperatorDeclarationSyntax conversionOperatorDeclarationSyntax)
         {
-            declarationGroup.Add(
+            declarationGroup.Append(
                 Token.PrintWithSuffix(
                     conversionOperatorDeclarationSyntax.ImplicitOrExplicitKeyword,
                     " ",
@@ -189,7 +223,7 @@ internal static partial class BaseMethodDeclaration
         }
         else if (node is OperatorDeclarationSyntax operatorDeclarationSyntax)
         {
-            declarationGroup.Add(
+            declarationGroup.Append(
                 Node.Print(operatorDeclarationSyntax.ReturnType, context),
                 " ",
                 operatorDeclarationSyntax.ExplicitInterfaceSpecifier is not null
@@ -203,24 +237,24 @@ internal static partial class BaseMethodDeclaration
 
         if (typeParameterList != null && typeParameterList.Parameters.Any())
         {
-            declarationGroup.Add(TypeParameterList.Print(typeParameterList, context));
+            declarationGroup.Append(TypeParameterList.Print(typeParameterList, context));
         }
 
         if (parameterList != null)
         {
             if (parameterList.Parameters.Any())
             {
-                declarationGroup.Add(ParameterList.Print(parameterList, context));
+                declarationGroup.Append(ParameterList.Print(parameterList, context));
             }
             else
             {
-                declarationGroup.Add(
+                declarationGroup.Append(
                     Token.Print(parameterList.OpenParenToken, context),
                     Token.Print(parameterList.CloseParenToken, context)
                 );
             }
 
-            declarationGroup.Add(Doc.IfBreak(Doc.Null, Doc.SoftLine));
+            declarationGroup.Append(Doc.IfBreak(Doc.Null, Doc.SoftLine));
         }
 
         if (constructorInitializer != null)
@@ -230,7 +264,7 @@ internal static partial class BaseMethodDeclaration
                 ArgumentList.Print(constructorInitializer.ArgumentList, context)
             );
 
-            declarationGroup.Add(
+            declarationGroup.Append(
                 Doc.Group(
                     Doc.Indent(Doc.HardLine),
                     Doc.Indent(colonToken),
@@ -240,30 +274,31 @@ internal static partial class BaseMethodDeclaration
             );
         }
 
-        docs.Add(Doc.Group(declarationGroup));
+        docs.Append(Doc.Group(ref declarationGroup));
+        declarationGroup.Dispose();
 
         if (constraintClauses != null)
         {
-            docs.Add(ConstraintClauses.Print(constraintClauses.Value, context));
+            docs.Append(ConstraintClauses.Print(constraintClauses.Value, context));
         }
 
         if (body != null)
         {
-            docs.Add(Block.Print(body, context));
+            docs.Append(Block.Print(body, context));
         }
         else
         {
             if (expressionBody != null)
             {
-                docs.Add(ArrowExpressionClause.Print(expressionBody, context));
+                docs.Append(ArrowExpressionClause.Print(expressionBody, context));
             }
         }
 
         if (semicolonToken.HasValue)
         {
-            docs.Add(Token.Print(semicolonToken.Value, context));
+            docs.Append(Token.Print(semicolonToken.Value, context));
         }
 
-        return Doc.Group(docs);
+        return Doc.Group(ref docs);
     }
 }

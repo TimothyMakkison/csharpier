@@ -9,7 +9,8 @@ internal class DocPrinter
     protected readonly Stack<PrintCommand> RemainingCommands = new();
     protected readonly Dictionary<string, PrintMode> GroupModeMap = [];
     protected int CurrentWidth;
-    protected readonly StringBuilder Output = new();
+    protected readonly PooledStringBuilder PooledOutput;
+    protected readonly StringBuilder Output;
     protected bool ShouldRemeasure;
     protected bool NewLineNextStringValue;
     protected bool SkipNextNewLine;
@@ -30,6 +31,8 @@ internal class DocPrinter
         this.RemainingCommands.Push(
             new PrintCommand(Indenter.GenerateRoot(), PrintMode.Break, doc)
         );
+        this.PooledOutput = PooledStringBuilder.GetInstance();
+        this.Output = this.PooledOutput.Builder;
     }
 
     public static string Print(Doc document, PrinterOptions printerOptions, string endOfLine)
@@ -53,6 +56,8 @@ internal class DocPrinter
             this.Output.TrimStart('\n', '\r');
         }
         var result = this.Output.ToString();
+
+        this.PooledOutput.Free();
 
         return result;
     }
@@ -87,9 +92,9 @@ internal class DocPrinter
         }
         else if (doc is Concat concat)
         {
-            for (var x = concat.Contents.Count - 1; x >= 0; x--)
+            for (var x = concat.Count - 1; x >= 0; x--)
             {
-                this.Push(concat.Contents[x], mode, indent);
+                this.Push(concat[x], mode, indent);
             }
         }
         else if (doc is IndentDoc indentDoc)

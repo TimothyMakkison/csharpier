@@ -56,19 +56,22 @@ internal static class SeparatedSyntaxList
         {
             var member = list[x];
 
-            if (Token.HasLeadingCommentMatching(member, CSharpierIgnore.IgnoreEndRegex))
+            if (context.Information.HasCSharpierIgnore)
             {
-                docs.Append(unFormattedCode.AsSpan().Trim().ToString());
-                unFormattedCode.Clear();
-                printUnformatted = false;
-            }
-            else if (Token.HasLeadingCommentMatching(member, CSharpierIgnore.IgnoreStartRegex))
-            {
-                if (!printUnformatted && x > 0)
+                if (Token.HasLeadingCommentMatching(member, CSharpierIgnore.IgnoreEndRegex))
                 {
-                    docs.Append(Doc.HardLine);
+                    docs.Append(unFormattedCode.AsSpan().Trim().ToString());
+                    unFormattedCode.Clear();
+                    printUnformatted = false;
                 }
-                printUnformatted = true;
+                else if (Token.HasLeadingCommentMatching(member, CSharpierIgnore.IgnoreStartRegex))
+                {
+                    if (!printUnformatted && x > 0)
+                    {
+                        docs.Append(Doc.HardLine);
+                    }
+                    printUnformatted = true;
+                }
             }
 
             if (printUnformatted)
@@ -83,9 +86,7 @@ internal static class SeparatedSyntaxList
                 continue;
             }
 
-            var firstTrailingComment = list[x]
-                .GetTrailingTrivia()
-                .FirstOrDefault(o => o.IsComment());
+            var firstTrailingComment = list[x].FirstOrDefaultTrailingComment();
 
             // we want a trailing comma, but we need to get it printed in place before a trailing comment
             // shove it in the context so the token printing can pick it up and put it in place

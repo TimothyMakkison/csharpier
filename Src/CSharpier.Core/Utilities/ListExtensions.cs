@@ -1,5 +1,7 @@
+using CSharpier.Core.CSharp;
 using CSharpier.Core.DocTypes;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace CSharpier.Core.Utilities;
 
@@ -29,6 +31,23 @@ internal static class ListExtensions
             value.Add(doc);
         }
     }
+
+    public static bool Any<T>(this ReadOnlySpan<T> span, Func<T, bool> predicate)
+    {
+        foreach (var item in span)
+        {
+            if (predicate(item))
+                return true;
+        }
+
+        return false;
+    }
+
+    public static ReadOnlySpan<T> Skip<T>(this ReadOnlySpan<T> span, int count) =>
+        count > span.Length ? [] : span[count..];
+
+    public static ReadOnlySpan<T> Skip<T>(this Span<T> span, int count) =>
+        count > span.Length ? [] : span[count..];
 
     // Overload for Any to prevent unnecessary allocations of EnumeratorImpl
     public static bool Any(this in SyntaxTriviaList triviaList, Func<SyntaxTrivia, bool> predicate)
@@ -107,5 +126,39 @@ internal static class ListExtensions
         }
 
         return true;
+    }
+
+    public static SyntaxTrivia FirstOrDefaultTrailingComment(this SyntaxNode syntaxNode)
+    {
+        var len = syntaxNode.FullSpan.End - syntaxNode.Span.End;
+        if (len < 2)
+        {
+            return default;
+        }
+
+        return syntaxNode.GetTrailingTrivia().FirstOrDefault(o => o.IsComment());
+    }
+
+    public static SyntaxTrivia FirstOrDefaultTrailingComment(this in SyntaxToken token)
+    {
+        return token.TrailingTrivia.FirstOrDefault(o => o.IsComment());
+    }
+
+    public static bool AnyLeadingComment(this SyntaxNode syntaxNode)
+    {
+        return syntaxNode.GetLeadingTrivia().Any(o => o.IsComment());
+    }
+
+    public static bool Contains(this ref ValueListBuilder<SyntaxKind> vlb, SyntaxKind item)
+    {
+        foreach (var element in vlb.AsSpan())
+        {
+            if (item == element)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

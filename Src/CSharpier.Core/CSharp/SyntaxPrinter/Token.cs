@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using CSharpier.Core.DocTypes;
 using CSharpier.Core.Utilities;
@@ -49,7 +50,24 @@ internal static class Token
             return Doc.Null;
         }
 
-        var docs = new ValueListBuilder<Doc>([null, null, null, null, null, null, null, null]);
+        return PrintSyntaxToken1(
+            syntaxToken,
+            context,
+            suffixDoc,
+            skipLeadingTrivia,
+            skipTrailingTrivia
+        );
+    }
+
+    private static Doc PrintSyntaxToken1(
+        SyntaxToken syntaxToken,
+        PrintingContext context,
+        Doc? suffixDoc,
+        bool skipLeadingTrivia,
+        bool skipTrailingTrivia
+    )
+    {
+        var docs = new ValueListBuilder<Doc>([null, null]);
 
         if (!skipLeadingTrivia)
         {
@@ -131,7 +149,7 @@ internal static class Token
             {
                 if (
                     context.State.TrailingComma is not null
-                    && Enumerable.FirstOrDefault(syntaxToken.TrailingTrivia, o => o.IsComment())
+                    && syntaxToken.FirstOrDefaultTrailingComment()
                         == context.State.TrailingComma.TrailingComment
                 )
                 {
@@ -163,18 +181,24 @@ internal static class Token
             return Doc.Null;
         }
 
+        return PrintLeadingTrivia1(syntaxToken, context);
+    }
+
+    private static Doc PrintLeadingTrivia1(SyntaxToken syntaxToken, PrintingContext context)
+    {
         var isClosingBrace =
             syntaxToken.RawSyntaxKind() == SyntaxKind.CloseBraceToken
             || syntaxToken.Parent is CollectionExpressionSyntax
                 && syntaxToken.RawSyntaxKind() == SyntaxKind.CloseBracketToken;
 
+        var leadingTrivia = syntaxToken.LeadingTrivia;
         var printedTrivia = PrivatePrintLeadingTrivia(
-            syntaxToken.LeadingTrivia,
+            leadingTrivia,
             context,
             skipLastHardline: isClosingBrace
         );
 
-        var hasDirective = Enumerable.Any(syntaxToken.LeadingTrivia, o => o.IsDirective);
+        var hasDirective = leadingTrivia.Any(o => o.IsDirective);
 
         if (hasDirective)
         {
@@ -198,9 +222,9 @@ internal static class Token
 
         Doc extraNewLines = Doc.Null;
 
-        if (hasDirective || Enumerable.Any(syntaxToken.LeadingTrivia, o => o.IsComment()))
+        if (hasDirective || leadingTrivia.Any(o => o.IsComment()))
         {
-            extraNewLines = ExtraNewLines.Print(syntaxToken.LeadingTrivia);
+            extraNewLines = ExtraNewLines.Print(leadingTrivia);
         }
 
         return printedTrivia != Doc.Null || extraNewLines != Doc.Null
@@ -232,12 +256,28 @@ internal static class Token
         bool skipLastHardline = false
     )
     {
+        // TODO: add length check here
         if (leadingTrivia.Count == 0)
         {
             return Doc.Null;
         }
 
-        var docs = new List<Doc>();
+        return PrivatePrintLeadingTrivia1(
+            leadingTrivia,
+            context,
+            includeInitialNewLines,
+            skipLastHardline
+        );
+    }
+
+    private static Doc PrivatePrintLeadingTrivia1(
+        SyntaxTriviaList leadingTrivia,
+        PrintingContext context,
+        bool includeInitialNewLines,
+        bool skipLastHardline
+    )
+    {
+        var docs = new ValueListBuilder<Doc>([null, null, null, null]);
 
         // we don't print any new lines until we run into a comment or directive
         // the PrintExtraNewLines method takes care of printing the initial new lines for a given node
@@ -250,20 +290,20 @@ internal static class Token
 
             if (printNewLines && kind == SyntaxKind.EndOfLineTrivia)
             {
-                if (docs.Count > 0 && docs[^1] == Doc.HardLineSkipBreakIfFirstInGroup)
+                if (docs.Length > 0 && docs[^1] == Doc.HardLineSkipBreakIfFirstInGroup)
                 {
                     printNewLines = false;
                 }
 
                 if (
                     !(
-                        docs.Count > 1
+                        docs.Length > 1
                         && docs[^1] == Doc.HardLineSkipBreakIfFirstInGroup
                         && docs[^2] is LeadingComment { Type: CommentType.SingleLine }
                     )
                 )
                 {
-                    docs.Add(Doc.HardLineSkipBreakIfFirstInGroup);
+                    docs.Append(Doc.HardLineSkipBreakIfFirstInGroup);
                 }
             }
             if (kind is not (SyntaxKind.EndOfLineTrivia or SyntaxKind.WhitespaceTrivia))
@@ -271,7 +311,7 @@ internal static class Token
                 printNewLines = true;
             }
 
-            void AddLeadingComment(CommentType commentType)
+            void AddLeadingComment(CommentType commentType, ref ValueListBuilder<Doc> docs)
             {
                 var comment = trivia.ToFullString().TrimEnd('\n', '\r');
                 if (
@@ -283,13 +323,13 @@ internal static class Token
                     comment = leadingTrivia[x - 1] + comment;
                 }
 
-                docs.Add(Doc.LeadingComment(comment, commentType));
+                docs.Append(Doc.LeadingComment(comment, commentType));
             }
 
             if (IsSingleLineComment(kind))
             {
-                AddLeadingComment(CommentType.SingleLine);
-                docs.Add(
+                AddLeadingComment(CommentType.SingleLine, ref docs);
+                docs.Append(
                     kind == SyntaxKind.SingleLineDocumentationCommentTrivia
                         ? Doc.HardLineSkipBreakIfFirstInGroup
                         : Doc.Null
@@ -297,29 +337,29 @@ internal static class Token
             }
             else if (IsMultiLineComment(kind))
             {
-                AddLeadingComment(CommentType.MultiLine);
+                AddLeadingComment(CommentType.MultiLine, ref docs);
             }
             else if (kind == SyntaxKind.DisabledTextTrivia)
             {
-                docs.Add(Doc.Trim, trivia.ToString());
+                docs.Append(Doc.Trim, trivia.ToString());
             }
             else if (IsRegion(kind))
             {
                 var triviaText = trivia.ToString();
-                docs.Add(Doc.HardLineIfNoPreviousLine);
-                docs.Add(Doc.Trim);
-                docs.Add(
+                docs.Append(Doc.HardLineIfNoPreviousLine);
+                docs.Append(Doc.Trim);
+                docs.Append(
                     kind == SyntaxKind.RegionDirectiveTrivia
                         ? Doc.BeginRegion(triviaText)
                         : Doc.EndRegion(triviaText)
                 );
-                docs.Add(Doc.HardLine);
+                docs.Append(Doc.HardLine);
             }
             else if (trivia.IsDirective)
             {
                 var triviaText = trivia.ToString();
 
-                docs.Add(
+                docs.Append(
                     // adding two of these to ensure we get a new line when a directive follows a trailing comment
                     Doc.HardLineIfNoPreviousLineSkipBreakIfFirstInGroup,
                     Doc.HardLineIfNoPreviousLineSkipBreakIfFirstInGroup,
@@ -337,32 +377,27 @@ internal static class Token
                     )
                     {
                         x++;
-                        docs.Add(Doc.HardLineSkipBreakIfFirstInGroup);
+                        docs.Append(Doc.HardLineSkipBreakIfFirstInGroup);
                     }
                     printNewLines = false;
                 }
             }
         }
 
-        while (skipLastHardline && docs.Count != 0 && docs.Last() is HardLine or NullDoc)
+        while (skipLastHardline && docs.Length != 0 && docs[^1] is HardLine or NullDoc)
         {
-            docs.RemoveAt(docs.Count - 1);
+            docs.Pop();
         }
 
         if (context.State.NextTriviaNeedsLine)
         {
-            if (
-                Enumerable.Any(
-                    leadingTrivia,
-                    o => o.RawSyntaxKind() is SyntaxKind.IfDirectiveTrivia
-                )
-            )
+            if (leadingTrivia.Any(o => o.RawSyntaxKind() is SyntaxKind.IfDirectiveTrivia))
             {
                 docs.Insert(0, Doc.HardLineSkipBreakIfFirstInGroup);
             }
             else
             {
-                var index = docs.Count - 1;
+                var index = docs.Length - 1;
                 while (
                     index >= 0
                     && (docs[index] is HardLine or LeadingComment || docs[index] == Doc.Null)
@@ -373,7 +408,7 @@ internal static class Token
                 // this handles an edge case where we get here but already added the line
                 // it relates to the fact that single line comments include new line directives
                 if (
-                    index + 2 >= docs.Count
+                    index + 2 >= docs.Length
                     || !(docs[index + 1] is HardLine && docs[index + 2] is HardLine)
                 )
                 {
@@ -383,7 +418,7 @@ internal static class Token
             context.State.NextTriviaNeedsLine = false;
         }
 
-        return docs.Count > 0 ? Doc.Concat(docs) : Doc.Null;
+        return Doc.Concat(ref docs);
     }
 
     private static bool IsSingleLineComment(SyntaxKind kind) =>
@@ -402,6 +437,7 @@ internal static class Token
         return PrintTrailingTrivia(node.TrailingTrivia);
     }
 
+    [SkipLocalsInit]
     private static Doc PrintTrailingTrivia(in SyntaxTriviaList trailingTrivia)
     {
         if (trailingTrivia.Count == 0)
@@ -409,7 +445,7 @@ internal static class Token
             return Doc.Null;
         }
 
-        var docs = new ValueListBuilder<Doc>([null, null, null, null, null, null, null, null]);
+        var docs = new ValueListBuilder<Doc>([null, null, null, null]);
         foreach (var trivia in trailingTrivia)
         {
             if (trivia.RawSyntaxKind() == SyntaxKind.SingleLineCommentTrivia)
@@ -430,22 +466,22 @@ internal static class Token
 
     public static bool HasComments(SyntaxToken syntaxToken)
     {
-        return Enumerable.Any(
-                syntaxToken.LeadingTrivia,
-                o =>
-                    o.RawSyntaxKind()
-                        is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia)
+        return syntaxToken.LeadingTrivia.Any(o =>
+                o.RawSyntaxKind() is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia)
             )
-            || Enumerable.Any(
-                syntaxToken.TrailingTrivia,
-                o =>
-                    o.RawSyntaxKind()
-                        is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia)
+            || syntaxToken.TrailingTrivia.Any(o =>
+                o.RawSyntaxKind() is not (SyntaxKind.WhitespaceTrivia or SyntaxKind.EndOfLineTrivia)
             );
     }
 
     public static bool HasLeadingCommentMatching(SyntaxNode node, Regex regex)
     {
+        // exit if the leading trivia length is smaller than the smallest regex
+        if (node.FullSpan.Length < 19)
+        {
+            return false;
+        }
+
         // ReSharper disable once ForeachCanBeConvertedToQueryUsingAnotherGetEnumerator
         foreach (var o in node.GetLeadingTrivia())
         {
@@ -463,11 +499,35 @@ internal static class Token
 
     public static bool HasLeadingCommentMatching(SyntaxToken token, Regex regex)
     {
-        return Enumerable.Any(
-            token.LeadingTrivia,
-            o =>
+        // ReSharper disable once ForeachCanBeConvertedToQueryUsingAnotherGetEnumerator
+        foreach (var o in token.LeadingTrivia)
+        {
+            if (
                 o.RawSyntaxKind() is SyntaxKind.SingleLineCommentTrivia
                 && regex.IsMatch(o.ToString())
-        );
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool HasLeadingCommentMatching(in SyntaxTriviaList triviaList, Regex regex)
+    {
+        // ReSharper disable once ForeachCanBeConvertedToQueryUsingAnotherGetEnumerator
+        foreach (var o in triviaList)
+        {
+            if (
+                o.RawSyntaxKind() is SyntaxKind.SingleLineCommentTrivia
+                && regex.IsMatch(o.ToString())
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

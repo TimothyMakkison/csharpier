@@ -19,7 +19,7 @@ internal static class Parameter
             if (
                 node.AttributeLists.Count < 2
                 && (
-                    Enumerable.Any(node.GetLeadingTrivia(), o => o.IsComment())
+                    node.GetLeadingTrivia().Any(o => o.IsComment())
                     || node.Parent is ParameterListSyntax { Parameters.Count: 0 }
                 )
             )
@@ -53,6 +53,6 @@ internal static class Parameter
             docs.Append(EqualsValueClause.Print(node.Default, context));
         }
 
-        return hasAttribute ? Doc.Group(docs.AsSpan().ToArray()) : Doc.Concat(ref docs);
+        return hasAttribute ? Doc.Group(ref docs) : Doc.Concat(ref docs);
     }
 }

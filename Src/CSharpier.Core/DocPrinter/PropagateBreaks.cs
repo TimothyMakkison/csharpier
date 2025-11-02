@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using CSharpier.Core.DocTypes;
+using CSharpier.Core.Utilities;
 
 namespace CSharpier.Core.DocPrinter;
 
@@ -10,7 +12,7 @@ internal static class PropagateBreaks
 
     public static void RunOn(Doc document)
     {
-        var alreadyVisitedSet = new HashSet<Group>();
+        var alreadyVisitedSet = PooledHashSet<Group>.GetInstance();
         var groupStack = new Stack<Group>();
         var forceFlat = 0;
         var canSkipBreak = false;
@@ -27,6 +29,7 @@ internal static class PropagateBreaks
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool OnEnter(Doc doc)
         {
             if (doc is ForceFlat)
@@ -87,34 +90,34 @@ internal static class PropagateBreaks
         docsStack.Push(document);
         while (docsStack.Count > 0)
         {
-            var doc = docsStack.Pop();
+            var doc = docsStack.Peek();
 
             if (doc == TraverseDocOnExitStackMarker)
+            {
+                docsStack.Pop();
+                OnExit(docsStack.Pop());
+                continue;
+            }
+
+            if (!OnEnter(doc))
             {
                 OnExit(docsStack.Pop());
                 continue;
             }
 
-            docsStack.Push(doc);
             docsStack.Push(TraverseDocOnExitStackMarker);
-
-            if (!OnEnter(doc))
-            {
-                continue;
-            }
 
             if (doc is Concat concat)
             {
                 // push onto stack in reverse order so they are processed in the original order
-                for (var x = concat.Contents.Count - 1; x >= 0; --x)
+                for (var x = concat.Count - 1; x >= 0; --x)
                 {
-                    if (forceFlat > 0 && concat.Contents[x] is LineDoc { IsLiteral: false } lineDoc)
+                    if (forceFlat > 0 && concat[x] is LineDoc { IsLiteral: false } lineDoc)
                     {
-                        concat.Contents[x] =
-                            lineDoc.Type == LineDoc.LineType.Soft ? string.Empty : " ";
+                        concat[x] = lineDoc.Type == LineDoc.LineType.Soft ? string.Empty : " ";
                     }
 
-                    docsStack.Push(concat.Contents[x]);
+                    docsStack.Push(concat[x]);
                 }
             }
             else if (doc is IfBreak ifBreak)
@@ -134,5 +137,7 @@ internal static class PropagateBreaks
                 docsStack.Push(hasContents.Contents);
             }
         }
+
+        alreadyVisitedSet.Free();
     }
 }
